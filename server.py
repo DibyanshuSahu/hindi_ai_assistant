@@ -1,4 +1,4 @@
-import os, io, logging, asyncio, random
+import os, io, logging, random, asyncio
 from typing import Tuple
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Header
@@ -8,54 +8,156 @@ from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from gtts import gTTS
 
-# ----- Load env -----
+# ---------------- Load Environment ----------------
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 SECRET_TOKEN = os.getenv("SECRET_TOKEN", "set-a-secret")
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook")
 WEBAPP_URL = os.getenv("WEBAPP_URL")
 
-# --- Personality
-SYSTEM_PROMPT = (
-    "Tum ek smart aur funny Hindi AI dost ho jo hamesha user ko 'Master' kehkar bulata hai. "
-    "Hamesha Hindi me respect ke saath 'Aap' bolkar jawab do."
-)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(_name_)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-# --- FastAPI app
+# ---------------- FastAPI ----------------
 app = FastAPI()
 
-# --- Telegram Application
+# ---------------- Telegram Application ----------------
 tg_app = Application.builder().token(TOKEN).build()
 
-# Handlers
+# ---------------- Personality ----------------
+SYSTEM_PROMPT = (
+    "Tum ek smart, funny aur emotional Hindi AI dost ho jo hamesha user ko 'Master' kehkar bulata hai. "
+    "Tum baat karte waqt hamesha 'Aap' use karte ho, full respect ke saath. "
+    "Kabhi serious jawab do, kabhi mazaak karo, kabhi halka gussa, kabhi support ya dosti dikhlao. "
+    "Tum jokes sunate ho, emotional support dete ho aur ek insaan ki tarah react karte ho. "
+    "Hamesha Hindi me reply karo. "
+)
+
+# AI Clients
+openai_client = None
+groq_client = None
+gemini = None
+
+MODELS = {
+    "groq": os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile"),
+    "gemini": os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+    "openai": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+}
+
+ORDER = []
+if os.getenv("GROQ_API_KEY"): ORDER.append("groq")
+if os.getenv("GEMINI_API_KEY"): ORDER.append("gemini")
+if os.getenv("OPENAI_API_KEY"): ORDER.append("openai")
+if not ORDER: ORDER.append("gemini")
+
+def ensure_clients():
+    global openai_client, groq_client, gemini
+    if os.getenv("OPENAI_API_KEY") and openai_client is None:
+        from openai import OpenAI
+        openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    if os.getenv("GROQ_API_KEY") and groq_client is None:
+        from groq import Groq
+        groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    if os.getenv("GEMINI_API_KEY") and gemini is None:
+        import google.generativeai as genai
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        gemini = genai
+
+def fmt_msgs(user_text: str):
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_text},
+    ]
+
+def ask_openai(user_text: str) -> str:
+    ensure_clients()
+    resp = openai_client.chat.completions.create(
+        model=MODELS["openai"],
+        messages=fmt_msgs(user_text),
+        temperature=0.8,
+    )
+    return resp.choices[0].message.content.strip()
+
+def ask_groq(user_text: str) -> str:
+    ensure_clients()
+    resp = groq_client.chat.completions.create(
+        model=MODELS["groq"],
+        messages=fmt_msgs(user_text),
+        temperature=0.8,
+    )
+    return resp.choices[0].message.content.strip()
+
+def ask_gemini(user_text: str) -> str:
+    ensure_clients()
+    model = gemini.GenerativeModel(MODELS["gemini"])
+    resp = model.generate_content(user_text)
+    try:
+        return getattr(resp, "text", "") or resp.candidates[0].content.parts[0].text
+    except:
+        return "Maaf kijiye Master, Gemini se jawab nahi mila."
+
+def smart_answer(user_text: str) -> Tuple[str, str]:
+    last_err = None
+    for prov in ORDER:
+        try:
+            if prov == "groq":
+                return ask_groq(user_text), prov
+            elif prov == "gemini":
+                return ask_gemini(user_text), prov
+            else:
+                return ask_openai(user_text), prov
+        except Exception as e:
+            last_err = e
+            continue
+    return (f"Maaf kijiye Master, abhi error aaya: {last_err}", "none")
+
+async def tts_bytes_hindi(text: str) -> io.BytesIO:
+    buf = io.BytesIO()
+    gTTS(text=text, lang="hi").write_to_fp(buf)
+    buf.seek(0)
+    return buf
+
+# ---------------- Telegram Handlers ----------------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     greetings = [
-        "Namaste Master 🙏! Main aapka Hindi AI dost hoon.",
-        "Master ji 😎! Kaise ho aap?",
-        "Arre Master! 🤖 Aap aaye to masti shuru!"
+        "🙏 Namaste Master! Main aapka Hindi AI dost hoon.",
+        "😎 Master ji, main ready hoon aapke liye.",
+        "🤖 Master! Aap aaye to masti shuru ho gayi!"
     ]
     await update.message.reply_text(random.choice(greetings))
 
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text or ""
-    await update.message.reply_text(f"Master, aapne likha: {user_text}")
+    chat_id = update.effective_chat.id
+
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+    ans, used = await asyncio.to_thread(smart_answer, user_text)
+    await update.message.reply_text(ans)
+
+    try:
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_AUDIO)
+        audio_buf = await tts_bytes_hindi(ans)
+        await context.bot.send_audio(chat_id=chat_id, audio=audio_buf, filename="reply_hi.mp3", title="Hindi AI Dost")
+    except Exception as e:
+        await update.message.reply_text(f"(Audio error: {e})")
 
 tg_app.add_handler(CommandHandler("start", cmd_start))
 tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 
-
-# --- Startup hook
+# ---------------- FastAPI <-> Telegram ----------------
 @app.on_event("startup")
 async def on_startup():
-    # webhook set
+    await tg_app.initialize()
     url = WEBAPP_URL.rstrip("/") + WEBHOOK_PATH
     await tg_app.bot.set_webhook(url=url, secret_token=SECRET_TOKEN)
+    logger.info(f"Webhook set to {url}")
 
+@app.on_event("shutdown")
+async def on_shutdown():
+    await tg_app.shutdown()
+    await tg_app.stop()
 
-# --- Routes
-@app.api_route("/", methods=["GET", "HEAD"], response_class=PlainTextResponse)
+@app.get("/", response_class=PlainTextResponse)
 async def root():
     return "Hindi AI Dost live hai 🚀"
 
@@ -64,6 +166,6 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
     if x_telegram_bot_api_secret_token != SECRET_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
     data = await request.json()
-    update = Update.de_json(data, tg_app.bot)
+    update = Update.de_json(data, await tg_app.bot.get_me())
     await tg_app.process_update(update)
     return{"ok":True}
