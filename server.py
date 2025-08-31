@@ -29,7 +29,7 @@ MODELS = {
     "openai":os.getenv("OPENAI_MODEL","gpt-4o-mini"),
 }
 
-# --- Personality: Respectful Hindi AI Dost ---
+# --- Personality: Respectful Hindi AI Dost
 SYSTEM_PROMPT = (
     "Tum ek smart, funny aur emotional Hindi AI dost ho jo hamesha user ko 'Master' kehkar bulata hai. "
     "Tum baat karte waqt hamesha 'Aap' use karte ho, full respect ke saath. "
@@ -42,7 +42,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 app = FastAPI()
 tg_app: Application | None = None
 
-# API clients
 openai_client = None
 groq_client = None
 gemini = None
@@ -120,7 +119,7 @@ async def tts_bytes_hindi(text: str) -> io.BytesIO:
     return buf
 
 # ---------- Telegram Handlers ----------
-async def cmd_start(update: update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     greetings = [
         "Namaste Master 🙏! Main aapka Hindi AI dost hoon, hamesha aapke saath.",
         "Master ji 😎! Aaj mood kaisa hai? Mujhse baat kijiye!",
@@ -128,7 +127,7 @@ async def cmd_start(update: update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text(random.choice(greetings))
 
-async def on_text(update, context: ContextTypes.DEFAULT_TYPE):
+async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text or ""
     chat_id = update.effective_chat.id
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
@@ -158,8 +157,6 @@ async def on_startup():
         raise RuntimeError("WEBAPP_URL missing")
     url = WEBAPP_URL.rstrip("/") + WEBHOOK_PATH
     await tg_app.bot.set_webhook(url=url, secret_token=SECRET_TOKEN)
-
-    # ✅ Pehle initialize, phir start
     await tg_app.initialize()
     await tg_app.start()
 
@@ -174,4 +171,4 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
     data = await request.json()
     update = Update.de_json(data, await tg_app.bot.get_me())
     await tg_app.process_update(update)
-    return{"ok":True}
+    return{"ok": True}
