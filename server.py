@@ -1,4 +1,4 @@
-import os, io, time, logging, asyncio, random
+import os, io, logging, asyncio, random
 from typing import Tuple
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Header
@@ -29,7 +29,7 @@ MODELS = {
     "openai":os.getenv("OPENAI_MODEL","gpt-4o-mini"),
 }
 
-# --- Personality: Respectful Hindi AI Dost
+# --- Personality: Respectful Hindi AI Dost ---
 SYSTEM_PROMPT = (
     "Tum ek smart, funny aur emotional Hindi AI dost ho jo hamesha user ko 'Master' kehkar bulata hai. "
     "Tum baat karte waqt hamesha 'Aap' use karte ho, full respect ke saath. "
@@ -42,6 +42,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 app = FastAPI()
 tg_app: Application | None = None
 
+# API clients
 openai_client = None
 groq_client = None
 gemini = None
@@ -157,8 +158,10 @@ async def on_startup():
         raise RuntimeError("WEBAPP_URL missing")
     url = WEBAPP_URL.rstrip("/") + WEBHOOK_PATH
     await tg_app.bot.set_webhook(url=url, secret_token=SECRET_TOKEN)
-    asyncio.create_task(tg_app.initialize())
-    asyncio.create_task(tg_app.start())
+
+    # ✅ Pehle initialize, phir start
+    await tg_app.initialize()
+    await tg_app.start()
 
 @app.get("/", response_class=PlainTextResponse)
 async def root():
