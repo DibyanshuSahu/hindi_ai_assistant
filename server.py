@@ -120,7 +120,7 @@ async def tts_bytes_hindi(text: str) -> io.BytesIO:
     return buf
 
 # ---------- Telegram Handlers ----------
-async def cmd_start(update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_start(update: update, context: ContextTypes.DEFAULT_TYPE):
     greetings = [
         "Namaste Master 🙏! Main aapka Hindi AI dost hoon, hamesha aapke saath.",
         "Master ji 😎! Aaj mood kaisa hai? Mujhse baat kijiye!",
