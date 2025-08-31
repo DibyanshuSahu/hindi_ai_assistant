@@ -160,9 +160,10 @@ async def on_startup():
     await tg_app.initialize()
     await tg_app.start()
 
-@app.get("/", response_class=PlainTextResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=PlainTextResponse)
 async def root():
     return "Hindi AI Dost live hai 🚀"
+
 
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: str = Header(None)):
