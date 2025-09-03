@@ -44,13 +44,13 @@ tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 # ---------------- FastAPI + Telegram bridge ----------------
 @app.on_event("startup")
 async def on_startup():
-    # Initialize Telegram app
-    await tg_app.initialize()
+    if not TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN missing")
 
-    # Set webhook (IMPORTANT: don't call tg_app.start in webhook mode)
-    url = WEBAPP_URL.rstrip("/") + WEBHOOK_PATH
-    await tg_app.bot.set_webhook(url=url, secret_token=SECRET_TOKEN)
-    logger.info(f"Webhook set to {url}")
+    await tg_app.initialize()
+    await tg_app.start()
+    await tg_app.updater.start_polling()
+    logger.info("Bot started in long polling mode ✅")
 
 @app.on_event("shutdown")
 async def on_shutdown():
